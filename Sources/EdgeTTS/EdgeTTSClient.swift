@@ -417,7 +417,7 @@ extension EdgeTTSClient {
                 default:
                     break
                 }
-                try await config.setLanguage(language.rawValue)
+                try await config.setLanguage(detectedLanguage)
             } else {
                 print("Language not recognized")
             }
