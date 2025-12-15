@@ -4,7 +4,7 @@ enum EdgeTTSConstants {
     static let baseURL = "api.msedgeservices.com/tts/cognitiveservices"
     static let trustedClientToken = "6A5AA1D4EAFF4E9FB37E23D68491D6F4"
 
-    static let wssURL = "wss://\(baseURL)/websocket/v1?Ocp-Apim-Subscription-Key=\(trustedClientToken)"
+    static let wssURL = "wss://speech.platform.bing.com/consumer/speech/synthesize/readaloud/edge/v1?TrustedClientToken=\(trustedClientToken)"
     static let voiceListURL = "https://\(baseURL)/voices/list?Ocp-Apim-Subscription-Key=\(trustedClientToken)"
 
     static let defaultVoice = "en-US-EmmaMultilingualNeural"
@@ -27,7 +27,7 @@ enum EdgeTTSConstants {
             "Cache-Control": "no-cache",
             "Origin": "chrome-extension://jdiccldimpdaibmpdkjnbmckianbfold",
             "Sec-WebSocket-Version": "13",
-            "Host": "api.msedgeservices.com",
+            "Host": "speech.platform.bing.com"
         ]
         EdgeTTSConstants.baseHeaders.forEach { headers[$0.key] = $0.value }
         return headers
