@@ -1,11 +1,10 @@
 import Foundation
 
 enum EdgeTTSConstants {
-    static let baseURL = "api.msedgeservices.com/tts/cognitiveservices"
     static let trustedClientToken = "6A5AA1D4EAFF4E9FB37E23D68491D6F4"
 
     static let wssURL = "wss://speech.platform.bing.com/consumer/speech/synthesize/readaloud/edge/v1?TrustedClientToken=\(trustedClientToken)"
-    static let voiceListURL = "https://\(baseURL)/voices/list?Ocp-Apim-Subscription-Key=\(trustedClientToken)"
+    static let voiceListURL = "https://api.msedgeservices.com/tts/cognitiveservices/voices/list?Ocp-Apim-Subscription-Key=\(trustedClientToken)"
 
     static let defaultVoice = "en-US-EmmaMultilingualNeural"
 

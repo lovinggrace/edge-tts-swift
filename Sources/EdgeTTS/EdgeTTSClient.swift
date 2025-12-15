@@ -1,4 +1,18 @@
+
 import Foundation
+import NaturalLanguage
+
+/// A lightweight Swift client for Microsoft Edge Text-to-Speech.
+///
+/// `EdgeTTSClient` can:
+/// - Fetch the list of available voices via the Edge voices endpoint.
+/// - Synthesize text to audio in one shot (`synthesize(text:...)`).
+/// - Stream synthesis events (`stream(text:...)`) including audio chunks and optional boundary metadata.
+///
+/// The streaming API is built on `URLSessionWebSocketTask`.
+///
+/// - Important: This client is marked `@unchecked Sendable` because it holds a `URLSession` and a delegate.
+///   Treat instances as logically thread-safe only if you avoid mutating shared state from callbacks.
 
 public final class EdgeTTSClient: @unchecked Sendable {
     private let session: URLSession
@@ -6,6 +20,13 @@ public final class EdgeTTSClient: @unchecked Sendable {
     private let receiveTimeout: TimeInterval
     private let wsDelegate = WebSocketDelegate()
 
+    /// Creates a new `EdgeTTSClient`.
+    ///
+    /// - Parameters:
+    ///   - session: The `URLSession` used for the non-WebSocket HTTP request in ``listVoices()``.
+    ///     WebSocket streaming uses an internal ephemeral session.
+    ///   - connectTimeout: Timeout (seconds) for establishing HTTP/WebSocket requests.
+    ///   - receiveTimeout: Timeout (seconds) for receiving WebSocket messages while streaming.
     public init(
         session: URLSession = .shared,
         connectTimeout: TimeInterval = 10,
@@ -18,6 +39,13 @@ public final class EdgeTTSClient: @unchecked Sendable {
 
     // MARK: - Public API
 
+    /// Fetches the list of available voices.
+    ///
+    /// This calls the Edge voices list endpoint and decodes the response into ``Voice`` values.
+    /// If the service returns HTTP 403, the client asks ``DRM`` to adjust for clock skew and retries once.
+    ///
+    /// - Returns: An array of available voices.
+    /// - Throws: ``EdgeTTSError`` if URL construction fails, decoding fails, or the HTTP response is not successful.
     public func listVoices() async throws -> [Voice] {
         let token = await DRM.generateSecMSGEC()
         let urlString = "\(EdgeTTSConstants.voiceListURL)&Sec-MS-GEC=\(token)&Sec-MS-GEC-Version=\(EdgeTTSConstants.secMsGecVersion)"
@@ -58,6 +86,17 @@ public final class EdgeTTSClient: @unchecked Sendable {
         }
     }
 
+    /// Synthesizes text into a single audio buffer.
+    ///
+    /// This is a convenience wrapper over ``stream(text:config:outputFormat:)`` that collects
+    /// all `.audio` events into one `Data` value.
+    ///
+    /// - Parameters:
+    ///   - text: The text to synthesize.
+    ///   - config: Synthesis configuration including voice, rate, pitch, volume, and boundary settings.
+    ///   - outputFormat: The Edge output format string (for example, `audio-24khz-48kbitrate-mono-mp3`).
+    /// - Returns: Audio bytes for the synthesized speech.
+    /// - Throws: Any error produced by the underlying WebSocket stream.
     public func synthesize(
         text: String,
         config: TTSConfig = try! TTSConfig(),
@@ -72,6 +111,17 @@ public final class EdgeTTSClient: @unchecked Sendable {
         return audio
     }
 
+    /// Streams synthesis events for the given text.
+    ///
+    /// The returned stream yields ``StreamEvent`` values:
+    /// - `.audio(Data)` containing MPEG audio frames.
+    /// - `.boundary(...)` metadata events when boundary tracking is enabled in the provided config.
+    ///
+    /// - Parameters:
+    ///   - text: The text to synthesize.
+    ///   - config: Synthesis configuration.
+    ///   - outputFormat: The Edge output format string.
+    /// - Returns: An asynchronous stream of synthesis events.
     public func stream(
         text: String,
         config: TTSConfig = try! TTSConfig(),
@@ -325,4 +375,55 @@ private final class WebSocketDelegate: NSObject, URLSessionTaskDelegate {
             print("WebSocket task completed with error: \(error.localizedDescription)")
         }
     }
+}
+
+extension EdgeTTSClient {
+    /// Synthesizes text with optional language detection.
+    ///
+    /// If `forceLanguage` is provided, it is applied to the config via `config.setLanguage(_)`.
+    /// Otherwise, when `autoDetectLanguage` is `true`, this method uses `NLLanguageRecognizer` to pick a dominant
+    /// language and applies it to the synthesis config before calling ``synthesize(text:config:outputFormat:)``.
+    ///
+    /// - Parameters:
+    ///   - text: The text to synthesize.
+    ///   - config: Base synthesis configuration to start from.
+    ///   - outputFormat: The Edge output format string.
+    ///   - autoDetectLanguage: Whether to infer the language from the input text.
+    ///   - forceLanguage: A locale identifier (for example `en-US` or `de-DE`) to force.
+    /// - Returns: Audio bytes for the synthesized speech.
+    /// - Throws: Any error produced by config language changes or synthesis.
+    public func synthesize(
+        text: String,
+        config: TTSConfig = try! TTSConfig(),
+        outputFormat: String = "audio-24khz-48kbitrate-mono-mp3",
+        autoDetectLanguage: Bool = true,
+        forceLanguage: String? = nil
+    ) async throws -> Data {
+        
+        var config = config
+        
+        if let forceLanguage {
+            try await config.setLanguage(forceLanguage)
+        } else if autoDetectLanguage {
+            let recognizer = NLLanguageRecognizer()
+            recognizer.processString(text)
+            if let language = recognizer.dominantLanguage {
+                var detectedLanguage = language.rawValue
+                switch detectedLanguage {
+                case "de":
+                    detectedLanguage = "de-DE"
+                case "en":
+                    detectedLanguage = "en-US"
+                default:
+                    break
+                }
+                try await config.setLanguage(language.rawValue)
+            } else {
+                print("Language not recognized")
+            }
+        }
+        
+        return try await synthesize(text: text, config: config, outputFormat: outputFormat)
+    }
+        
 }
