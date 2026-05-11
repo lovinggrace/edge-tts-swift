@@ -168,7 +168,7 @@ public final class EdgeTTSClient: @unchecked Sendable {
             var request = URLRequest(url: url)
             request.timeoutInterval = receiveTimeout
             request.cachePolicy = .reloadIgnoringLocalAndRemoteCacheData
-            EdgeTTSConstants.wssHeaders.forEach { request.addValue($0.value, forHTTPHeaderField: $0.key) }
+            DRM.headersWithMUID(EdgeTTSConstants.wssHeaders).forEach { request.addValue($0.value, forHTTPHeaderField: $0.key) }
             request.addValue("synthesize", forHTTPHeaderField: "Sec-WebSocket-Protocol")
 
             let websocket = wsSession.webSocketTask(with: request)
@@ -179,9 +179,11 @@ public final class EdgeTTSClient: @unchecked Sendable {
 
                 var offsetCompensation: Int64 = 0
                 var lastDurationOffset: Int64 = 0
+                var cumulativeAudioBytes: Int64 = 0
                 var audioReceived = false
 
                 chunkStream: for chunk in escapedChunks {
+                    var chunkAudioBytes: Int64 = 0
                     let ssml = mkSSML(config: config, escapedText: chunk)
                     try await sendSSMLRequest(websocket: websocket, ssml: ssml)
 
@@ -208,7 +210,12 @@ public final class EdgeTTSClient: @unchecked Sendable {
                                     lastDurationOffset = parsed.offset + parsed.duration
                                     continuation.yield(.boundary(type: parsed.type, offset: parsed.offset, duration: parsed.duration, text: parsed.text))
                                 case "turn.end":
-                                    offsetCompensation = lastDurationOffset + 8_750_000
+                                    if outputFormat == EdgeTTSConstants.defaultOutputFormat {
+                                        cumulativeAudioBytes += chunkAudioBytes
+                                        offsetCompensation = cumulativeAudioBytes * 8 * EdgeTTSConstants.ticksPerSecond / EdgeTTSConstants.mp3BitrateBPS
+                                    } else {
+                                        offsetCompensation = lastDurationOffset + 8_750_000
+                                    }
                                     break chunkLoop
                                 case "turn.start", "response":
                                     continue
@@ -229,11 +236,23 @@ public final class EdgeTTSClient: @unchecked Sendable {
                                 guard headers["Path"] == "audio" else {
                                     throw EdgeTTSError.unexpectedResponse("Binary frame did not contain audio data")
                                 }
-                                if let contentType = headers["Content-Type"], contentType != "audio/mpeg" {
+
+                                let contentType = headers["Content-Type"]
+                                if let contentType, contentType != "audio/mpeg" {
                                     throw EdgeTTSError.unexpectedResponse("Unexpected Content-Type: \(contentType)")
                                 }
-                                if payload.isEmpty {
-                                    continue
+                                if contentType == nil {
+                                    if payload.isEmpty {
+                                        continue
+                                    }
+                                    throw EdgeTTSError.unexpectedResponse("Binary frame had no Content-Type but included data")
+                                }
+                                guard !payload.isEmpty else {
+                                    throw EdgeTTSError.unexpectedResponse("Binary audio frame did not contain audio data")
+                                }
+
+                                if outputFormat == EdgeTTSConstants.defaultOutputFormat {
+                                    chunkAudioBytes += Int64(payload.count)
                                 }
                                 audioReceived = true
                                 continuation.yield(.audio(payload))
@@ -310,11 +329,16 @@ public final class EdgeTTSClient: @unchecked Sendable {
         let decoder = JSONDecoder()
         let envelope = try decoder.decode(MetadataEnvelope.self, from: data)
         for meta in envelope.metadata {
-            guard let boundary = Boundary(rawValue: meta.type) else { continue }
+            guard let boundary = Boundary(rawValue: meta.type) else {
+                if meta.type == "SessionEnd" {
+                    continue
+                }
+                throw EdgeTTSError.unknownResponse("Unknown metadata type: \(meta.type)")
+            }
             let offset = meta.data.offset + offsetCompensation
-            return (boundary, offset, meta.data.duration, meta.data.text.text)
+            return (boundary, offset, meta.data.duration, unescapeXML(meta.data.text.text))
         }
-        throw EdgeTTSError.unexpectedResponse("No WordBoundary metadata found")
+        throw EdgeTTSError.unexpectedResponse("No boundary metadata found")
     }
 
     private func escapeXML(_ string: String) -> String {
@@ -325,6 +349,19 @@ public final class EdgeTTSClient: @unchecked Sendable {
             (">", "&gt;"),
             ("\"", "&quot;"),
             ("'", "&apos;"),
+        ]
+        replacements.forEach { result = result.replacingOccurrences(of: $0.of, with: $0.with) }
+        return result
+    }
+
+    private func unescapeXML(_ string: String) -> String {
+        var result = string
+        let replacements: [(of: String, with: String)] = [
+            ("&quot;", "\""),
+            ("&apos;", "'"),
+            ("&lt;", "<"),
+            ("&gt;", ">"),
+            ("&amp;", "&"),
         ]
         replacements.forEach { result = result.replacingOccurrences(of: $0.of, with: $0.with) }
         return result

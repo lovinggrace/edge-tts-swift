@@ -3,19 +3,25 @@ import Foundation
 enum EdgeTTSConstants {
     static let trustedClientToken = "6A5AA1D4EAFF4E9FB37E23D68491D6F4"
 
-    static let wssURL = "wss://speech.platform.bing.com/consumer/speech/synthesize/readaloud/edge/v1?TrustedClientToken=\(trustedClientToken)"
-    static let voiceListURL = "https://api.msedgeservices.com/tts/cognitiveservices/voices/list?Ocp-Apim-Subscription-Key=\(trustedClientToken)"
+    static let baseURL = "speech.platform.bing.com/consumer/speech/synthesize/readaloud"
+
+    static let wssURL = "wss://\(baseURL)/edge/v1?TrustedClientToken=\(trustedClientToken)"
+    static let voiceListURL = "https://\(baseURL)/voices/list?trustedclienttoken=\(trustedClientToken)"
 
     static let defaultVoice = "en-US-EmmaMultilingualNeural"
 
-    static let chromiumFullVersion = "140.0.3485.14"
-    static let chromiumMajorVersion = chromiumFullVersion.split(separator: ".", maxSplits: 1).first ?? "140"
+    static let chromiumFullVersion = "143.0.3650.75"
+    static let chromiumMajorVersion = chromiumFullVersion.split(separator: ".", maxSplits: 1).first ?? "143"
     static let secMsGecVersion = "1-\(chromiumFullVersion)"
+
+    static let ticksPerSecond: Int64 = 10_000_000
+    static let mp3BitrateBPS: Int64 = 48_000
+    static let defaultOutputFormat = "audio-24khz-48kbitrate-mono-mp3"
 
     static var baseHeaders: [String: String] {
         [
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/\(chromiumMajorVersion).0.0.0 Safari/537.36 Edg/\(chromiumMajorVersion).0.0.0",
-            "Accept-Encoding": "gzip, deflate, br",
+            "Accept-Encoding": "gzip, deflate, br, zstd",
             "Accept-Language": "en-US,en;q=0.9",
         ]
     }
@@ -26,7 +32,6 @@ enum EdgeTTSConstants {
             "Cache-Control": "no-cache",
             "Origin": "chrome-extension://jdiccldimpdaibmpdkjnbmckianbfold",
             "Sec-WebSocket-Version": "13",
-            "Host": "speech.platform.bing.com"
         ]
         EdgeTTSConstants.baseHeaders.forEach { headers[$0.key] = $0.value }
         return headers

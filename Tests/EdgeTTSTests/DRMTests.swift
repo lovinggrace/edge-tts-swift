@@ -11,4 +11,18 @@ final class DRMTests: XCTestCase {
 
         XCTAssertEqual(token, expected)
     }
+
+    func testGenerateMUIDShape() {
+        let muid = DRM.generateMUID()
+
+        XCTAssertEqual(muid.count, 32)
+        XCTAssertNotNil(muid.range(of: #"^[0-9A-F]{32}$"#, options: .regularExpression))
+    }
+
+    func testHeadersWithMUIDAddsCookie() {
+        let headers = DRM.headersWithMUID(["User-Agent": "test"])
+
+        XCTAssertEqual(headers["User-Agent"], "test")
+        XCTAssertNotNil(headers["Cookie"]?.range(of: #"^muid=[0-9A-F]{32};$"#, options: .regularExpression))
+    }
 }

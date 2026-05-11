@@ -42,4 +42,16 @@ enum DRM {
         let digest = SHA256.hash(data: Data(toHash.utf8))
         return digest.map { String(format: "%02X", $0) }.joined()
     }
+
+    static func generateMUID() -> String {
+        (0..<16)
+            .map { _ in String(format: "%02X", UInt8.random(in: UInt8.min...UInt8.max)) }
+            .joined()
+    }
+
+    static func headersWithMUID(_ headers: [String: String]) -> [String: String] {
+        var combined = headers
+        combined["Cookie"] = "muid=\(generateMUID());"
+        return combined
+    }
 }
